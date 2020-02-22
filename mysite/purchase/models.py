@@ -23,7 +23,7 @@ class Procurement(models.Model):
                                      verbose_name=u'是否有对应订单')
     order = models.ForeignKey(Order, verbose_name=u'对应订单', on_delete=models.PROTECT,
                               limit_choices_to={'status': 'N', 'is_active': True},
-                              help_text=u'仅找尚未出货的订单', blank=True)
+                              help_text=u'仅找尚未出货的订单', blank=True, null=True)
     supplier = models.ForeignKey(Supplier, verbose_name=u'供货商', on_delete=models.PROTECT,
                                  limit_choices_to={'status': 'A'},)
     is_active = models.BooleanField(verbose_name=u'是否有效', default=True)
