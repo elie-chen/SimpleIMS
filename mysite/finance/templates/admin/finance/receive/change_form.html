@@ -1,0 +1,204 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}{{ block.super }}
+<script type="text/javascript" src="{% url 'admin:jsi18n' %}"></script>
+{{ media }}
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" type="text/css" href="{% static "admin/css/forms.css" %}">{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-form{% endblock %}
+
+{% if not is_popup %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; {% if has_view_permission %}<a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>{% else %}{{ opts.verbose_name_plural|capfirst }}{% endif %}
+&rsaquo; {% if add %}{% blocktrans with name=opts.verbose_name %}Add {{ name }}{% endblocktrans %}{% else %}{{ original|truncatewords:"18" }}{% endif %}
+</div>
+{% endblock %}
+{% endif %}
+
+{% block content %}<div id="content-main">
+{% block object-tools %}
+{% if change %}{% if not is_popup %}
+  <ul class="object-tools">
+    {% block object-tools-items %}
+      {% change_form_object_tools %}
+    {% endblock %}
+  </ul>
+{% endif %}{% endif %}
+{% endblock %}
+<form {% if has_file_field %}enctype="multipart/form-data" {% endif %}action="{{ form_url }}" method="post" id="{{ opts.model_name }}_form" novalidate>{% csrf_token %}{% block form_top %}{% endblock %}
+<div>
+{% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+{% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+{% if save_on_top %}{% block submit_buttons_top %}{% submit_row %}{% endblock %}{% endif %}
+{% if errors %}
+    <p class="errornote">
+    {% if errors|length == 1 %}{% trans "Please correct the error below." %}{% else %}{% trans "Please correct the errors below." %}{% endif %}
+    </p>
+    {{ adminform.form.non_field_errors }}
+{% endif %}
+
+{% block field_sets %}
+{% for fieldset in adminform %}
+  {% include "./includes/fieldset.html" %}
+{% endfor %}
+{% endblock %}
+
+{% block after_field_sets %}{% endblock %}
+
+{% block inline_field_sets %}
+{% for inline_admin_formset in inline_admin_formsets %}
+    {% include inline_admin_formset.opts.template %}
+{% endfor %}
+{% endblock %}
+
+{% block after_related_objects %}{% endblock %}
+
+{% block submit_buttons_bottom %}{% submit_row %}{% endblock %}
+
+{% block admin_change_form_document_ready %}
+    <script type="text/javascript"
+            id="django-admin-form-add-constants"
+            src="{% static 'admin/js/change_form.js' %}"
+            {% if adminform and add %}
+                data-model-name="{{ opts.model_name }}"
+            {% endif %}>
+    </script>
+{% endblock %}
+
+{# JavaScript for prepopulated fields #}
+{% prepopulated_fields_js %}
+
+<script>
+(function($) {
+    $(document).ready(function(){
+        var $form = $('#receive_form');
+        var formset_name = 'receivedetail_set';
+        var $formset_div = $('#' + formset_name + '-group');
+        var $formset_table = $formset_div.find('table');
+        var $formset_add_row_tr = $formset_div.find('tr.add-row')
+        var $submit_row_div = $form.find('div.submit-row');
+        var $formset_empty_row = $formset_table.find('tbody tr#' + formset_name + '-empty');
+        var $formset_total_input = $formset_div.find('input#id_' + formset_name + '-TOTAL_FORMS')
+
+        $formset_add_row_tr.hide();
+        $submit_row_div.hide();
+
+        var href = location.href;
+        href_list = href.split('/');
+        <!-- 表示为change -->
+        if (href_list[href_list.length - 2] == 'change'){
+            $('div.submit-row').html('<a href="/admin/finance/receive/" class="closelink">Close</a>');
+            $('div.submit-row').show();
+        }
+        else{
+            $submit_row_div.find('input').each(function(){
+                $(this).click(function(){
+                    $('#id_receivable').removeAttr("disabled");
+                });
+            });
+
+            if($('#id_receivable').val() == '')
+            {
+                <!-- 把非"对应应收帐款"的输入栏位隐藏起来 -->
+                $form.find('fieldset:first>div').each(function(){
+                    if(!$(this).hasClass('field-receivable')){
+                        $(this).hide();
+                    }
+                })
+                <!-- 隐藏"formset",""储存表单按钮"" -->
+                $formset_div.hide();
+                $submit_row_div.hide();
+
+                <!-- 选择"对应应收帐款"之后 -->
+                $('#id_receivable').change(function(){
+                    var receivable_id = $(this).val();
+                    if(receivable_id != ''){
+                        $(this).attr("disabled","disabled");
+
+                        <!-- 移除已有的收款单单身 -->
+                        <!-- $formset_div.find('table tbody .form-row').remove(); -->
+
+                        <!-- 根据对应应收帐款产生收款单单身 -->
+                        $.get('{% url 'finance:receivable_ajax_detail_list' %}', {'id':receivable_id}, function(data){
+                            if(data['code'] == 0){
+                                $form.find('fieldset:first>div').each(function(){
+                                    if(!$(this).hasClass('field-receivable')){
+                                        $(this).show();
+                                    }
+                                })
+                                $formset_div.show();
+                                $submit_row_div.show();
+
+                                <!-- 将资料填入表单中 -->
+                                $tbody = $formset_table.find('tbody');
+                                var receivables = data['receivables'];
+                                var index = 0;
+                                for(r in receivables){
+                                    total = $formset_total_input.val();
+                                    $new_row = $formset_empty_row.clone(true);
+                                    $formset_empty_row.removeClass('row' + (index + 1) % 3);
+                                    $formset_empty_row.addClass('row' + (index + 2) % 3);
+                                    $new_row.attr('id', formset_name + '-' + total);
+                                    $new_row.removeClass('empty-form');
+                                    $new_row.find('input').each(function(){
+                                        name = $(this).attr('name');
+                                        id = $(this).attr('id');
+                                        $(this).attr('name', name.replace(/__prefix__/, index));
+                                        $(this).attr('id', id.replace(/__prefix__/, index));
+                                        name_list = name.split('-');
+                                        if(name_list[name_list.length -1] == "product"){
+                                            $(this).val(receivables[r]['product']['id']);
+                                            $(this).parent().append(receivables[r]['product']['title']);
+                                        }
+                                        else if(name_list[name_list.length -1] == "amount"){
+                                            $(this).val(receivables[r]['amount']);
+                                        }
+                                        else if(name_list[name_list.length -1] == "discount"){
+                                            $(this).val('0.0000');
+                                        }
+                                        else if(name_list[name_list.length -1] == "currency"){
+                                            $(this).val(receivables[r]['currency']);
+                                        }
+                                        else if(name_list[name_list.length -1] == "rate"){
+                                            $(this).val(receivables[r]['rate']);
+                                        }
+                                    });
+                                    $new_row.find('a').remove();
+
+                                    $formset_empty_row.before($new_row);
+
+                                    total++;
+                                    $formset_total_input.val(total);
+
+                                    index++;
+                                }
+
+                                if (data['msg'] != '')
+                                    alert(data['msg']);
+                            }
+                            else{
+                                alert(data['msg']);
+                            }
+                        }, 'json')
+                    }
+                });
+            }
+            else{
+                $submit_row_div.show();
+                $('#id_receivable').attr("disabled","disabled");
+            }
+        }
+    });
+})(django.jQuery);
+</script>
+</div>
+</form></div>
+{% endblock %}
